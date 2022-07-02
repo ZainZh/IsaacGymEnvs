@@ -1115,8 +1115,8 @@ class DualFranka(VecTask):
         # self.franka_dof_targets[:,8]=torch.where(gripper_sep_spoon<0.008,0.04, 0.005)
         self.franka_dof_targets[:, 7] = torch.where(self.gripped == 1, 0.0046, 0.04)
         self.franka_dof_targets[:, 8] = torch.where(self.gripped == 1, 0.0046, 0.04)
-        self.franka_dof_targets[:, -1] = torch.where(self.gripped_1 == 1, 0.0244, 0.04)
-        self.franka_dof_targets[:, -2] = torch.where(self.gripped_1 == 1, 0.0244, 0.04)
+        self.franka_dof_targets[:, -1] = torch.where(self.gripped_1 == 1, 0.024, 0.04)
+        self.franka_dof_targets[:, -2] = torch.where(self.gripped_1 == 1, 0.024, 0.04)
         # print(self.franka_dof_targets[:,7],self.franka_dof_targets[:,8])
         # give to gym
         self.gym.set_dof_position_target_tensor(self.sim,
@@ -1683,15 +1683,15 @@ def compute_franka_reward(
     # ................................................................................................................
     ## sum of rewards
     sf = 1  # spoon flag
-    cf = 0  # cup flag
-    stage1 = 0  # stage1 flag
+    cf = 1  # cup flag
+    stage1 = 1  # stage1 flag
     stage2 = 0  # stage2 flag
     stage3 = 0  # stage3 flag
     rewards = stage1 * (dist_reward_scale * (dist_reward * sf + dist_reward_1 * cf) \
                         + rot_reward_scale * (rot_reward * sf + rot_reward_1 * cf) \
                         + around_handle_reward_scale * (around_handle_reward * sf + around_handle_reward_1 * cf) \
                         + finger_dist_reward_scale * (finger_dist_reward * sf + finger_dist_reward_1 * cf) \
-                        + lift_reward_scale * (lift_reward * sf + lift_reward_1 * cf) \
+                        + lift_reward_scale * (lift_reward * sf + lift_reward_1 * cf)*0 \
                         - action_penalty_scale * action_penalty \
                         - spoon_fall_penalty)
 
