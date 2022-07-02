@@ -1692,7 +1692,7 @@ def compute_franka_reward(
                         + rot_reward_scale * (rot_reward * sf + rot_reward_1 * cf) \
                         + around_handle_reward_scale * (around_handle_reward * sf + around_handle_reward_1 * cf) \
                         + finger_dist_reward_scale * (finger_dist_reward * sf + finger_dist_reward_1 * cf) \
-                        + lift_reward_scale * (lift_reward * sf + lift_reward_1 * cf)*0 \
+                        + lift_reward_scale * (lift_reward * sf + lift_reward_1 * cf) \
                         - action_penalty_scale * action_penalty \
                         - spoon_fall_penalty)
 
