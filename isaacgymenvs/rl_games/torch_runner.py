@@ -20,7 +20,6 @@ from rl_games.common.algo_observer import DefaultAlgoObserver
 from rl_games.algos_torch import sac_agent
 import rl_games.networks
 from rl_games.algos_torch import cql_agent
-from torch.utils.data import Dataset, DataLoader, random_split
 
 def _restore(agent, args):
     if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
@@ -43,8 +42,7 @@ def _override_sigma(agent, args):
 
 def _load_hdf5(agent, args):
     if args['dataset'] is not None and args['dataset']!='':
-        return agent.load_hdf5(args['dataset'])
-
+        agent.load_hdf5(args['dataset'])
 
 class Runner:
     def __init__(self, algo_observer=None):
@@ -142,11 +140,6 @@ class Runner:
 
         elif args['play']:
             self.run_play(args)
-        elif args['reg']:
-            if args['dataset'] is not None and args['dataset']!='':
-                self.train_regression(args)
-            else:
-                raise Exception('add dataset path!')
         else:
             self.run_train(args)
 

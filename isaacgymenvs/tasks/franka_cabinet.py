@@ -501,10 +501,10 @@ def compute_franka_reward(
     dist_reward *= dist_reward
     dist_reward = torch.where(d <= 0.02, dist_reward * 2, dist_reward)
 
-    axis1 = tf_vector(franka_grasp_rot, gripper_forward_axis)
-    axis2 = tf_vector(drawer_grasp_rot, drawer_inward_axis)
-    axis3 = tf_vector(franka_grasp_rot, gripper_up_axis)
-    axis4 = tf_vector(drawer_grasp_rot, drawer_up_axis)
+    axis1 = tf_vector(franka_grasp_rot, gripper_forward_axis)  # +z
+    axis2 = tf_vector(drawer_grasp_rot, drawer_inward_axis)  # -x
+    axis3 = tf_vector(franka_grasp_rot, gripper_up_axis)  # +y
+    axis4 = tf_vector(drawer_grasp_rot, drawer_up_axis)  # +z
 
     dot1 = torch.bmm(axis1.view(num_envs, 1, 3), axis2.view(num_envs, 3, 1)).squeeze(-1).squeeze(-1)  # alignment of forward axis for gripper
     dot2 = torch.bmm(axis3.view(num_envs, 1, 3), axis4.view(num_envs, 3, 1)).squeeze(-1).squeeze(-1)  # alignment of up axis for gripper
