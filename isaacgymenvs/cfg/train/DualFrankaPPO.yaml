@@ -34,7 +34,7 @@ params:
   load_path: ${...checkpoint} # path to the checkpoint to load
 
   config:
-    name: ${resolve_default:DualFrankaPPO_0621_fullstage,${....experiment}}
+    name: ${resolve_default:DualFrankaPPO_0702_spoon,${....experiment}}
     full_experiment_name: ${.name}
     env_name: rlgpu
     ppo: True
@@ -49,7 +49,7 @@ params:
     reward_shaper:
       scale_value: 0.01
     normalize_advantage: True
-    gamma: 0.99
+    gamma: 0.95
     tau: 0.95
     learning_rate: 5e-4
     lr_schedule: adaptive
@@ -62,10 +62,10 @@ params:
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: True
-    e_clip: 0.2
+    e_clip: 0.3
     horizon_length: 500
-#    minibatch_size: 2048
-    minibatch_size: 10
+    minibatch_size: 16384
+   # minibatch_size: 10
     mini_epochs: 8
     critic_coef: 4
     clip_value: True

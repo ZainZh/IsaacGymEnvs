@@ -423,7 +423,7 @@ class DualFranka(VecTask):
             self.shelf.append(shelf_actor)
 
         # add camera
-       # self.set_camera()
+        # self.set_camera()
 
         self.hand_handle = self.gym.find_actor_rigid_body_handle(self.env_ptr, franka_actor, "panda_link7")
         self.hand_handle_1 = self.gym.find_actor_rigid_body_handle(self.env_ptr, franka_actor_1, "panda_link7")
@@ -1683,10 +1683,10 @@ def compute_franka_reward(
     # ................................................................................................................
     ## sum of rewards
     sf = 1  # spoon flag
-    cf = 1  # cup flag
-    stage1 = 1  # stage1 flag
-    stage2 = 1  # stage2 flag
-    stage3 = 1  # stage3 flag
+    cf = 0  # cup flag
+    stage1 = 0  # stage1 flag
+    stage2 = 0  # stage2 flag
+    stage3 = 0  # stage3 flag
     rewards = stage1 * (dist_reward_scale * (dist_reward * sf + dist_reward_1 * cf) \
                         + rot_reward_scale * (rot_reward * sf + rot_reward_1 * cf) \
                         + around_handle_reward_scale * (around_handle_reward * sf + around_handle_reward_1 * cf) \
