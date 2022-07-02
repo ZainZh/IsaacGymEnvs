@@ -184,6 +184,7 @@ class DualFranka(VecTask):
         table_asset = self.gym.create_box(self.sim, table_dims.x, table_dims.y, table_dims.z, asset_options)
         # shelf_dims = gymapi.Vec3(0.15, 0.2, 0.15)
         # shelf_asset = self.gym.create_box(self.sim, shelf_dims.x, shelf_dims.y, shelf_dims.z, asset_options)
+
         other_asset_options = gymapi.AssetOptions()
         cup_asset = self.gym.load_asset(self.sim, asset_root, cup_asset_file, other_asset_options)
 

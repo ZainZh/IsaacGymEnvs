@@ -19,7 +19,7 @@ from typing import Dict, Tuple, List
 from utils.utils import HDF5DatasetWriter
 
 torch.set_printoptions(precision=4, sci_mode=False)
-file_time = time.strftime("%m-%d-%H_%M_%S", time.localtime())
+file_time = time.strftime("%m-%d %H_%M_%S", time.localtime())
 test_config = configparser.ConfigParser()
 test_config.read('test_config.ini')
 franka_cfg_path = test_config['PRESET'].get('franka_cfg_path', './cfg/config.yaml')
