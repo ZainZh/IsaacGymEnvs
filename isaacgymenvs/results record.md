@@ -89,3 +89,17 @@
     the training rewards: 15000
 
     result: spoon and cup both success, but cup was always knocked off.
+
+## experiment date: 2022.07.03
+    
+    task = DualFranka (task1 cup and spoon)
+    
+    task_name = DualFrankaPPO_0702_stage1_purestage1
+
+    algo: PPO (without any changed  parames)
+
+    the training epoch: 350
+
+    the training rewards: 30000(very strange!!!!  Because in the test.py, each env only can obtain maxinum 16 rewards.)
+
+    result: spoon and cup both are very close to success, but then perform poor!
