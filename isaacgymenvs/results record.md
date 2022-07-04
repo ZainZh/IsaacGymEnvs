@@ -103,3 +103,31 @@
     the training rewards: 30000(very strange!!!!  Because in the test.py, each env only can obtain maxinum 16 rewards.)
 
     result: spoon and cup both are very close to success, but then perform poor!
+
+## experiment date: 2022.07.04
+    
+    task = DualFranka (task1 cup and spoon)
+    
+    task_name = DualFrankaSAC_0703_purestage1
+
+    algo: SAC (without any changed  parames)
+
+    the training epoch: 1500
+
+    the training rewards: 40000(very strange!!!!  Because in the test.py, each env only can obtain maxinum 16 rewards.)
+
+    result: Very Bad!!
+
+## experiment date: 2022.07.04
+    
+    task = DualFranka (task1 cup and spoon)
+    
+    task_name = DualFrankaSAC_0703_paramstage1
+
+    algo: SAC ( gamma: 0.95 init_alpha: 0.9  critic_lr: 0.0001 alpha_lr: 0.0001 sigma: 0.9)
+
+    the training epoch: 1500
+
+    the training rewards:20000
+
+    result: Cup sucess, on the contrary to PPO
