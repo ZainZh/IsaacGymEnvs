@@ -1835,11 +1835,11 @@ class ContinuousMultiA2CBase(A2CBase):
             if self.multi_gpu:
                 av_kls_left = self.hvd.average_value(av_kls_left, 'ep_kls')
                 av_kls_right = self.hvd.average_value(av_kls_right, 'ep_kls')
-            self.last_lr_left, self.entropy_coef_left = self.scheduler_left.update(self.last_lr_left,
+            self.last_lr_left, self.entropy_coef_left = self.scheduler.update(self.last_lr_left,
                                                                                    self.entropy_coef_left,
                                                                                    self.epoch_num, 0,
                                                                                    av_kls_left.item())
-            self.last_lr_right, self.entropy_coef_right = self.scheduler_right.update(self.last_lr_right,
+            self.last_lr_right, self.entropy_coef_right = self.scheduler.update(self.last_lr_right,
                                                                                       self.entropy_coef_right,
                                                                                       self.epoch_num, 0,
                                                                                       av_kls_right.item())
