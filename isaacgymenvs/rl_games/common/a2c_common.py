@@ -1307,8 +1307,8 @@ class ContinuousMultiA2CBase(A2CBase):
         self.game_rewards_right = torch_ext.AverageMeter(self.value_size, self.games_to_track).to(self.ppo_device)
         self.game_lengths_right = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
 
-        # self.scaler_left = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
-        # self.scaler_right = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
+        self.scaler_left = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
+        self.scaler_right = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
 
         self.last_lr_left = self.config['learning_rate']
         self.last_lr_right = self.config['learning_rate']
@@ -1394,19 +1394,19 @@ class ContinuousMultiA2CBase(A2CBase):
 
     def trancate_gradients_and_step_left(self):
         if self.truncate_grads:
-            self.scaler.unscale_(self.optimizer_left)
+            self.scaler_left.unscale_(self.optimizer_left)
             nn.utils.clip_grad_norm_(self.model_left.parameters(), self.grad_norm)
 
-        self.scaler.step(self.optimizer_left)
-        self.scaler.update()
+        self.scaler_left.step(self.optimizer_left)
+        self.scaler_left.update()
 
     def trancate_gradients_and_step_right(self):
         if self.truncate_grads:
-            self.scaler.unscale_(self.optimizer_right)
+            self.scaler_right.unscale_(self.optimizer_right)
             nn.utils.clip_grad_norm_(self.model_right.parameters(), self.grad_norm)
 
-        self.scaler.step(self.optimizer_right)
-        self.scaler.update()
+        self.scaler_right.step(self.optimizer_right)
+        self.scaler_right.update()
 
     def get_action_values_left(self, obs):
         processed_obs = self._preproc_obs(obs['obs'])
@@ -1606,8 +1606,8 @@ class ContinuousMultiA2CBase(A2CBase):
         state_left = {}
         state_right = {}
         if self.mixed_precision:
-            state_left['scaler'] = self.scaler.state_dict()
-            state_right['scaler'] = self.scaler.state_dict()
+            state_left['scaler'] = self.scaler_left.state_dict()
+            state_right['scaler'] = self.scaler_right.state_dict()
         if self.has_central_value:
             state_left['central_val_stats'] = self.central_value_net.get_stats_weights(model_stats)
             state_right['central_val_stats'] = self.central_value_net.get_stats_weights(model_stats)
@@ -1631,8 +1631,8 @@ class ContinuousMultiA2CBase(A2CBase):
             self.model_left.value_mean_std.load_state_dict(weights['reward_mean_std'])
             self.model_right.value_mean_std.load_state_dict(weights['reward_mean_std'])
         if self.mixed_precision and 'scaler' in weights:
-            self.scaler.load_state_dict(weights['scaler'])
-            self.scaler.load_state_dict(weights['scaler'])
+            self.scaler_left.load_state_dict(weights['scaler'])
+            self.scaler_right.load_state_dict(weights['scaler'])
 
     def set_weights(self, weights):
         self.model_left.load_state_dict(weights['model'])
