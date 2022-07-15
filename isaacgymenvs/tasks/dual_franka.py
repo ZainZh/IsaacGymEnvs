@@ -1108,8 +1108,8 @@ class DualFranka(VecTask):
         gripper_sep_cup = self.franka_dof_targets[:, -1] + self.franka_dof_targets[:, -2]
         # self.franka_dof_targets[:,7]=torch.where(gripper_sep_spoon<0.008,0.04, 0.005)
         # self.franka_dof_targets[:,8]=torch.where(gripper_sep_spoon<0.008,0.04, 0.005)
-        self.franka_dof_targets[:, 7] = torch.where(self.gripped_1 == 1, 0.024, 0.04)
-        self.franka_dof_targets[:, 8] = torch.where(self.gripped_1 == 1, 0.024, 0.04)
+        # self.franka_dof_targets[:, 7] = torch.where(self.gripped_1 == 1, 0.024, 0.04)
+        # self.franka_dof_targets[:, 8] = torch.where(self.gripped_1 == 1, 0.024, 0.04)
 
         # print(self.franka_dof_targets[:,7],self.franka_dof_targets[:,8])
         # give to gym
@@ -1676,7 +1676,7 @@ def compute_franka_reward(
 
     # ................................................................................................................
     ## sum of rewards
-    sf = 1  # spoon flag
+    sf = 0  # spoon flag
     cf = 1  # cup flag
     stage1 = 1  # stage1 flag
     stage2 = 0  # stage2 flag
