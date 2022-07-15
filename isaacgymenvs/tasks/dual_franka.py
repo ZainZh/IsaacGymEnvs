@@ -112,8 +112,8 @@ class DualFranka(VecTask):
         # get every dof state (pos and vel)
         self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
 
-        self.franka_dof_state = self.dof_state.view(self.num_envs, -1, 2)[:, :self.num_franka_dofs]
-        self.franka_dof_state_1 = self.dof_state.view(self.num_envs, -1, 2)[:, self.num_franka_dofs:]
+        self.franka_dof_state_1 = self.dof_state.view(self.num_envs, -1, 2)[:, :self.num_franka_dofs]
+        self.franka_dof_state = self.dof_state.view(self.num_envs, -1, 2)[:, self.num_franka_dofs:]
 
         self.franka_dof_pos = self.franka_dof_state[..., 0]
         self.franka_dof_vel = self.franka_dof_state[..., 1]
