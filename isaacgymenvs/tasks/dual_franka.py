@@ -396,11 +396,11 @@ class DualFranka(VecTask):
             self.env_ptr = self.gym.create_env(self.sim, env_lower, env_upper, num_per_row)
             if self.aggregate_mode >= 3:
                 self.gym.begin_aggregate(self.env_ptr, max_agg_bodies, max_agg_shapes, True)
-
-            franka_actor = self.gym.create_actor(self.env_ptr, franka_asset, pose, "franka", i, 0)
-            self.gym.set_actor_dof_properties(self.env_ptr, franka_actor, franka_dof_props)
             franka_actor_1 = self.gym.create_actor(self.env_ptr, franka_asset_1, pose_1, "franka1", i, 0)
             self.gym.set_actor_dof_properties(self.env_ptr, franka_actor_1, franka_dof_props_1)
+            franka_actor = self.gym.create_actor(self.env_ptr, franka_asset, pose, "franka", i, 0)
+            self.gym.set_actor_dof_properties(self.env_ptr, franka_actor, franka_dof_props)
+
 
             if self.aggregate_mode == 2:
                 self.gym.begin_aggregate(self.env_ptr, max_agg_bodies, max_agg_shapes, True)
@@ -805,19 +805,23 @@ class DualFranka(VecTask):
 
         self.reset_buf[env_ids] = 0
 
-    def  reset_idx(self, env_ids):
+    def reset_idx(self, env_ids):
         # reset franka
         # self.root_states[env_ids] = self.saved_root_tensor[env_ids]
-
-        pos = tensor_clamp(
-            self.franka_default_dof_pos.unsqueeze(0) + 0.1 * (
-                    torch.rand((len(env_ids), self.num_franka_dofs), device=self.device) - 0.5),
+        pos_1 = tensor_clamp(
+            self.franka_default_dof_pos_1.unsqueeze(0) + 0.1 * (
+                    torch.rand((len(env_ids), self.num_franka_dofs_1), device=self.device) - 0.5),
             self.franka_dof_lower_limits, self.franka_dof_upper_limits)
+
+        # pos = tensor_clamp(
+        #     self.franka_default_dof_pos.unsqueeze(0) + 0.1 * (
+        #             torch.rand((len(env_ids), self.num_franka_dofs), device=self.device) - 0.5),
+        #     self.franka_dof_lower_limits, self.franka_dof_upper_limits)
         # print("pos is ", pos)
         # reset franka with "pos"
-        self.franka_dof_pos[env_ids, :] = pos
-        self.franka_dof_vel[env_ids, :] = torch.zeros_like(self.franka_dof_vel[env_ids])
-        self.franka_dof_targets[env_ids, :self.num_franka_dofs] = pos
+        self.franka_dof_pos_1[env_ids, :] = pos_1
+        self.franka_dof_vel_1[env_ids, :] = torch.zeros_like(self.franka_dof_vel_1[env_ids])
+        self.franka_dof_targets[env_ids, :self.num_franka_dofs] = pos_1
 
         # reset franka1
 
@@ -1104,8 +1108,8 @@ class DualFranka(VecTask):
         gripper_sep_cup = self.franka_dof_targets[:, -1] + self.franka_dof_targets[:, -2]
         # self.franka_dof_targets[:,7]=torch.where(gripper_sep_spoon<0.008,0.04, 0.005)
         # self.franka_dof_targets[:,8]=torch.where(gripper_sep_spoon<0.008,0.04, 0.005)
-        self.franka_dof_targets[:, 7] = torch.where(self.gripped == 1, 0.0046, 0.04)
-        self.franka_dof_targets[:, 8] = torch.where(self.gripped == 1, 0.0046, 0.04)
+        self.franka_dof_targets[:, 7] = torch.where(self.gripped_1 == 1, 0.024, 0.04)
+        self.franka_dof_targets[:, 8] = torch.where(self.gripped_1 == 1, 0.024, 0.04)
 
         # print(self.franka_dof_targets[:,7],self.franka_dof_targets[:,8])
         # give to gym
