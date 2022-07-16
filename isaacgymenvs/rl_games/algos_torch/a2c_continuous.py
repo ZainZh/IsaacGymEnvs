@@ -447,11 +447,9 @@ class A2CMultiAgent(a2c_common.ContinuousMultiA2CBase):
                                    kl_dist, self.last_lr_right, lr_mul, \
                                    mu.detach(), sigma.detach(), b_loss)
 
-    def train_actor_critic_multi(self, input_dict_left, input_dict_right):
-        self.calc_gradients_left(input_dict_left)
+    def train_actor_critic_multi(self, input_dict_right):
         self.calc_gradients_right(input_dict_right)
-        self.train_result = self.train_result_left + self.train_result_right
-        return self.train_result
+        return self.train_result_right
 
     def reg_loss(self, mu):
         if self.bounds_loss_coef is not None:
