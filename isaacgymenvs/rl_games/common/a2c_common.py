@@ -1549,7 +1549,7 @@ class ContinuousMultiA2CBase(A2CBase):
                 right_reward = np.expand_dims(right_reward, axis=1)
 
             return self.obs_to_tensors(obs_left), self.obs_to_tensors(obs_right), rewards.to(self.ppo_device), dones.to(
-                self.ppo_device), infos, \
+                self.ppo_device), dones_spoon.to(self.ppo_device), dones_cup.to(self.ppo_device),infos, \
                    left_reward.to(self.ppo_device), right_reward.to(self.ppo_device)
 
     def clear_stats(self):

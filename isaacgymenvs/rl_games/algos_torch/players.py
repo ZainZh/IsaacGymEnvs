@@ -338,6 +338,60 @@ class SACPlayer(BasePlayer):
     def reset(self):
         pass
 
+class SACMultiPlayer(BasePlayer):
+    def __init__(self, params):
+        BasePlayer.__init__(self, params)
+        self.network = self.config['network']
+        self.actions_num = self.action_space.shape[0]
+        self.action_range = [
+            float(self.env_info['action_space'].low.min()),
+            float(self.env_info['action_space'].high.max())
+        ]
+
+        obs_shape = self.obs_shape
+        self.normalize_input = False
+        config = {
+            'obs_dim': self.env_info["observation_space"].shape[0],
+            'action_dim': self.env_info["action_space"].shape[0],
+            'actions_num' : self.actions_num,
+            'input_shape' : obs_shape,
+            'value_size': self.env_info.get('value_size', 1),
+            'normalize_value': False,
+            'normalize_input': self.normalize_input,
+        }
+        self.model_left = self.network.build(config)
+        self.model_right = self.network.build(config)
+        self.model_left.to(self.device)
+        self.model_right.to(self.device)
+        self.model_left.eval()
+        self.model_right.eval()
+        self.is_rnn = self.model_left.is_rnn()
+        self.is_rnn = self.model_right.is_rnn()
+
+    def restore(self, fn):
+        checkpoint = torch_ext.load_checkpoint(fn)
+
+        self.model_left.sac_network.actor.load_state_dict(checkpoint['model_left']['actor'])
+        self.model_right.sac_network.actor.load_state_dict(checkpoint['model_right']['actor'])
+        self.model_left.sac_network.critic.load_state_dict(checkpoint['model_left']['critic'])
+        self.model.sac_network.critic.load_state_dict(checkpoint['model_right']['critic'])
+        self.model.sac_network.critic_target.load_state_dict(checkpoint['critic_target'])
+        if self.normalize_input and 'running_mean_std' in checkpoint:
+            self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+
+    def get_action(self, obs, is_determenistic=False):
+        if self.has_batch_dimension == False:
+            obs = unsqueeze_obs(obs)
+        dist = self.model.actor(obs)
+        actions = dist.sample() if is_determenistic else dist.mean
+        actions = actions.clamp(*self.action_range).to(self.device)
+        if self.has_batch_dimension == False:
+            actions = torch.squeeze(actions.detach())
+        return actions
+
+    def reset(self):
+        pass
+
 
 class CQLPlayer(SACPlayer):
     def __init__(self,params):
