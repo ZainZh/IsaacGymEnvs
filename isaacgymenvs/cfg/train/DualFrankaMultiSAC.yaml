@@ -52,7 +52,7 @@ params:
     device: ${....rl_device}   # sac_device
     weight_decay:
     is_train: ${if:${....test},False,True}
-    save_best_after: 40   # > epoch_num can save, if not set default 500
+    save_best_after: 20   # > epoch_num can save, if not set default 500
     print_stats: True   # print fps_step,fps_total
     max_epochs: ${resolve_default:3000,${....max_iterations}}   # can be overrided in main config
     reward_shaper: # needed

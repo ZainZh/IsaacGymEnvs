@@ -622,8 +622,10 @@ class SACMultiAgent(BaseAlgorithm):
 
         self.num_frames_per_epoch = self.num_actors * self.num_steps_per_episode
 
-        self.log_alpha = torch.tensor(np.log(self.init_alpha)).float().to(self.sac_device)
-        self.log_alpha.requires_grad = True
+        self.log_alpha_left = torch.tensor(np.log(self.init_alpha)).float().to(self.sac_device)
+        self.log_alpha_right = torch.tensor(np.log(self.init_alpha)).float().to(self.sac_device)
+        self.log_alpha_left.requires_grad = True
+        self.log_alpha_right.requires_grad = True
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
 
@@ -647,24 +649,31 @@ class SACMultiAgent(BaseAlgorithm):
 
         print("Number of Agents", self.num_actors, "Batch Size", self.batch_size)
 
-        self.actor_optimizer = torch.optim.Adam(
+        self.actor_optimizer_left = torch.optim.Adam(
             [{'params': self.model_left.sac_network.actor.parameters(), 'lr': self.config['actor_lr'],
-              'betas': self.config.get("actor_betas", [0.9, 0.999])},
-             {'params': self.model_right.sac_network.actor.parameters(), 'lr': self.config['actor_lr'],
+              'betas': self.config.get("actor_betas", [0.9, 0.999])}
+             ])
+        self.actor_optimizer_right = torch.optim.Adam(
+            [{'params': self.model_right.sac_network.actor.parameters(), 'lr': self.config['actor_lr'],
               'betas': self.config.get("actor_betas", [0.9, 0.999])}
              ])
 
-        self.critic_optimizer = torch.optim.Adam(
+        self.critic_optimizer_left = torch.optim.Adam(
             [{'params': self.model_left.sac_network.critic.parameters(), 'lr': self.config['actor_lr'],
-              'betas': self.config.get("actor_betas", [0.9, 0.999])},
-             {'params': self.model_right.sac_network.critic.parameters(), 'lr': self.config['actor_lr'],
               'betas': self.config.get("actor_betas", [0.9, 0.999])}
              ])
 
-        self.log_alpha_optimizer = torch.optim.Adam(
-            [{'params': self.log_alpha, 'lr': self.config["alpha_lr"],'betas': self.config.get("alphas_betas", [0.9, 0.999])}
+        self.critic_optimizer_right = torch.optim.Adam(
+            [{'params': self.model_right.sac_network.critic.parameters(), 'lr': self.config['actor_lr'],
+              'betas': self.config.get("actor_betas", [0.9, 0.999])}
+             ])
+        self.log_alpha_optimizer_left = torch.optim.Adam(
+            [{'params': self.log_alpha_left, 'lr': self.config["alpha_lr"],'betas': self.config.get("alphas_betas", [0.9, 0.999])}
          ])
-
+        self.log_alpha_optimizer_right = torch.optim.Adam(
+            [{'params': self.log_alpha_right, 'lr': self.config["alpha_lr"],
+              'betas': self.config.get("alphas_betas", [0.9, 0.999])}
+             ])
         self.replay_buffer_left = experience.VectorizedReplayBuffer(self.env_info['observation_space'].shape,
                                                                     self.env_info['action_space'].shape,
                                                                     self.replay_buffer_size,
@@ -781,8 +790,12 @@ class SACMultiAgent(BaseAlgorithm):
         self.dones_right = torch.zeros((batch_size,), dtype=torch.uint8, device=self.sac_device)
 
     @property
-    def alpha(self):
-        return self.log_alpha.exp()
+    def alpha_left(self):
+        return self.log_alpha_left.exp()
+
+    @property
+    def alpha_right(self):
+        return self.log_alpha_right.exp()
 
     @property
     def device(self):
@@ -792,14 +805,14 @@ class SACMultiAgent(BaseAlgorithm):
         state_left, state_right = self.get_weights()
 
         state_left['steps'] = self.step
-        state_left['actor_optimizer'] = self.actor_optimizer.state_dict()
-        state_left['critic_optimizer'] = self.critic_optimizer.state_dict()
-        state_left['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()
+        state_left['actor_optimizer'] = self.actor_optimizer_left.state_dict()
+        state_left['critic_optimizer'] = self.critic_optimizer_left.state_dict()
+        state_left['log_alpha_optimizer'] = self.log_alpha_optimizer_left.state_dict()
 
         state_right['steps'] = self.step
-        state_right['actor_optimizer'] = self.actor_optimizer.state_dict()
-        state_right['critic_optimizer'] = self.critic_optimizer.state_dict()
-        state_right['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()
+        state_right['actor_optimizer'] = self.actor_optimizer_right.state_dict()
+        state_right['critic_optimizer'] = self.critic_optimizer_right.state_dict()
+        state_right['log_alpha_optimizer'] = self.log_alpha_optimizer_right.state_dict()
 
         return state_left, state_right
 
@@ -837,9 +850,12 @@ class SACMultiAgent(BaseAlgorithm):
         self.set_weights(weights)
 
         self.step = weights['step']
-        self.actor_optimizer.load_state_dict(weights['actor_optimizer'])
-        self.critic_optimizer.load_state_dict(weights['critic_optimizer'])
-        self.log_alpha_optimizer.load_state_dict(weights['log_alpha_optimizer'])
+        self.actor_optimizer_left.load_state_dict(weights['actor_optimizer'])
+        self.actor_optimizer_right.load_state_dict(weights['actor_optimizer'])
+        self.critic_optimizer_left.load_state_dict(weights['critic_optimizer'])
+        self.critic_optimizer_right.load_state_dict(weights['critic_optimizer'])
+        self.log_alpha_optimizer_left.load_state_dict(weights['log_alpha_optimizer'])
+        self.log_alpha_optimizer_right.load_state_dict(weights['log_alpha_optimizer'])
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
@@ -862,7 +878,7 @@ class SACMultiAgent(BaseAlgorithm):
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
             target_Q1, target_Q2 = self.model_left.critic_target(next_obs, next_action)
-            target_V = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
+            target_V = torch.min(target_Q1, target_Q2) - self.alpha_left * log_prob
 
             target_Q = reward + (not_done * self.gamma * target_V)
             target_Q = target_Q.detach()
@@ -874,9 +890,9 @@ class SACMultiAgent(BaseAlgorithm):
         critic2_loss = self.c_loss(current_Q2, target_Q)
         critic_loss = critic1_loss + critic2_loss
 
-        self.critic_optimizer.zero_grad(set_to_none=True)
+        self.critic_optimizer_left.zero_grad(set_to_none=True)
         critic_loss.backward()
-        self.critic_optimizer.step()
+        self.critic_optimizer_left.step()
 
         return critic_loss.detach(), critic1_loss.detach(), critic2_loss.detach()
 
@@ -886,7 +902,7 @@ class SACMultiAgent(BaseAlgorithm):
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
             target_Q1, target_Q2 = self.model_right.critic_target(next_obs, next_action)
-            target_V = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
+            target_V = torch.min(target_Q1, target_Q2) - self.alpha_right * log_prob
 
             target_Q = reward + (not_done * self.gamma * target_V)
             target_Q = target_Q.detach()
@@ -898,9 +914,9 @@ class SACMultiAgent(BaseAlgorithm):
         critic2_loss = self.c_loss(current_Q2, target_Q)
         critic_loss = critic1_loss + critic2_loss
 
-        self.critic_optimizer.zero_grad(set_to_none=True)
+        self.critic_optimizer_right.zero_grad(set_to_none=True)
         critic_loss.backward()
-        self.critic_optimizer.step()
+        self.critic_optimizer_right.step()
 
         return critic_loss.detach(), critic1_loss.detach(), critic2_loss.detach()
 
@@ -915,26 +931,26 @@ class SACMultiAgent(BaseAlgorithm):
         actor_Q1, actor_Q2 = self.model_left.critic(obs, action)
         actor_Q = torch.min(actor_Q1, actor_Q2)
 
-        actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q)
+        actor_loss = (torch.max(self.alpha_left.detach(), self.min_alpha) * log_prob - actor_Q)
         actor_loss = actor_loss.mean()
 
-        self.actor_optimizer.zero_grad(set_to_none=True)
+        self.actor_optimizer_left.zero_grad(set_to_none=True)
         actor_loss.backward()
-        self.actor_optimizer.step()
+        self.actor_optimizer_left.step()
 
         for p in self.model_left.sac_network.critic.parameters():
             p.requires_grad = True
 
         if self.learnable_temperature:
-            alpha_loss = (self.alpha *
+            alpha_loss = (self.alpha_left *
                           (-log_prob - self.target_entropy).detach()).mean()
-            self.log_alpha_optimizer.zero_grad(set_to_none=True)
+            self.log_alpha_optimizer_left.zero_grad(set_to_none=True)
             alpha_loss.backward()
-            self.log_alpha_optimizer.step()
+            self.log_alpha_optimizer_left.step()
         else:
             alpha_loss = None
 
-        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss  # TODO: maybe not self.alpha
+        return actor_loss.detach(), entropy.detach(), self.alpha_left.detach(), alpha_loss  # TODO: maybe not self.alpha
 
     def update_actor_and_alpha_right(self, obs, step):
         for p in self.model_right.sac_network.critic.parameters():
@@ -947,26 +963,26 @@ class SACMultiAgent(BaseAlgorithm):
         actor_Q1, actor_Q2 = self.model_right.critic(obs, action)
         actor_Q = torch.min(actor_Q1, actor_Q2)
 
-        actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q)
+        actor_loss = (torch.max(self.alpha_right.detach(), self.min_alpha) * log_prob - actor_Q)
         actor_loss = actor_loss.mean()
 
-        self.actor_optimizer.zero_grad(set_to_none=True)
+        self.actor_optimizer_right.zero_grad(set_to_none=True)
         actor_loss.backward()
-        self.actor_optimizer.step()
+        self.actor_optimizer_right.step()
 
         for p in self.model_right.sac_network.critic.parameters():
             p.requires_grad = True
 
         if self.learnable_temperature:
-            alpha_loss = (self.alpha *
+            alpha_loss = (self.alpha_right *
                           (-log_prob - self.target_entropy).detach()).mean()
-            self.log_alpha_optimizer.zero_grad(set_to_none=True)
+            self.log_alpha_optimizer_right.zero_grad(set_to_none=True)
             alpha_loss.backward()
-            self.log_alpha_optimizer.step()
+            self.log_alpha_optimizer_right.step()
         else:
             alpha_loss = None
 
-        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss  # TODO: maybe not self.alpha
+        return actor_loss.detach(), entropy.detach(), self.alpha_right.detach(), alpha_loss  # TODO: maybe not self.alpha
 
     def soft_update_params(self, net, target_net, tau):
         for param, target_param in zip(net.parameters(), target_net.parameters()):
