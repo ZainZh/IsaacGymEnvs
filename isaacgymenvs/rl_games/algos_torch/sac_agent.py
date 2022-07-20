@@ -1349,8 +1349,8 @@ class SACMultiAgent(BaseAlgorithm):
                 mean_rewards_left = self.game_rewards_left.get_mean_left()
                 mean_lengths_left = self.game_lengths_left.get_mean_left()
 
-                # print('current length_left: {}'.format(self.current_lengths_left))
-                # print('current rewards_left: {}'.format(self.current_rewards_left / self.current_lengths_left))
+                print('current length_left: {}'.format(self.current_lengths_left))
+                print('current rewards_left: {}'.format(self.current_rewards_left / self.current_lengths_left))
                 print('mean_rewards_left: {}, mean_length_left: {}'.format(mean_rewards_left, mean_lengths_left))
 
                 self.writer.add_scalar('rewards_left/step', mean_rewards_left, frame)
@@ -1364,8 +1364,8 @@ class SACMultiAgent(BaseAlgorithm):
                 mean_rewards_right = self.game_rewards_right.get_mean_right()
                 mean_lengths_right = self.game_lengths_right.get_mean_right()
 
-                # print('current length_right: {}'.format(self.current_lengths_right))
-                # print('current rewards_right: {}'.format(self.current_rewards_right / self.current_lengths_right))
+                print('current length_right: {}'.format(self.current_lengths_right))
+                print('current rewards_right: {}'.format(self.current_rewards_right / self.current_lengths_right))
                 print('mean_rewards_right: {}, mean_length_right: {}'.format(mean_rewards_right, mean_lengths_right))
 
                 self.writer.add_scalar('rewards_right/step', mean_rewards_right, frame)
