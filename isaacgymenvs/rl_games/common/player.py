@@ -4,6 +4,9 @@ import numpy as np
 import torch
 from rl_games.common import env_configurations
 from rl_games.algos_torch import  model_builder
+from utils.utils import HDF5DatasetWriter
+import os
+from datetime import datetime
 
 class BasePlayer(object):
     def __init__(self, params):
@@ -13,7 +16,7 @@ class BasePlayer(object):
         self.env_config = self.config.get('env_config', {})
         self.env_info = self.config.get('env_info')
         self.clip_actions = config.get('clip_actions', True)
-
+        self.seed = self.env_config.pop('seed', None)
         if self.env_info is None:
             self.env = self.create_env()
             self.env_info = env_configurations.get_env_info(self.env)
@@ -46,6 +49,17 @@ class BasePlayer(object):
         self.render_sleep = self.player_config.get('render_sleep', 0.002)
         self.max_steps = 108000 // 4
         self.device = torch.device(self.device_name)
+
+        # add
+        self.if_write_hdf5 = self.config.get('save_hdf5_when_play', False)
+        a = self.config.get('save_hdf5_when_play')
+
+        if self.if_write_hdf5:
+            file_time = datetime.now().strftime("%m%d-%H-%M-%S")
+            output_path = os.path.join(self.config['save_hdf5_folder'], file_time+'.hdf5')
+            self.hdf5_writer = HDF5DatasetWriter(output_path, action_size=self.action_space.shape[0], obs_size=self.observation_space.shape[0], bufSize=1000, maxSize=None)
+            print('\033[1;33mWrite HDF5 offline dataset, path=>{}\033[0m'.format(output_path))
+
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -203,6 +217,11 @@ class BasePlayer(object):
                 cr += r
                 steps += 1
 
+                # save step to hdf5
+                if self.if_write_hdf5 and n >= 1:
+                    self.hdf5_writer.add(prev_obses, action, r, obses, done)
+                prev_obses = obses
+
                 if render:
                     self.env.render(mode='human')
                     time.sleep(self.render_sleep)
@@ -245,6 +264,9 @@ class BasePlayer(object):
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:
                         break
+            
+            if self.if_write_hdf5:
+                self.hdf5_writer.flush()
 
         print(sum_rewards)
         if print_game_res:

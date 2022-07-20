@@ -1,4 +1,6 @@
+import time
 import numpy as np
+import random
 import copy
 import torch
 import yaml
@@ -16,10 +18,11 @@ from rl_games.algos_torch import a2c_discrete
 from rl_games.algos_torch import players
 from rl_games.common.algo_observer import DefaultAlgoObserver
 from rl_games.algos_torch import sac_agent
+import rl_games.networks
 from rl_games.algos_torch import cql_agent
 
 def _restore(agent, args):
-    if args['checkpoint'] is not None and args['checkpoint']!='':
+    if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
         agent.restore(args['checkpoint'])
     else:
         # no restore but model exists
@@ -28,7 +31,7 @@ def _restore(agent, args):
             raise Exception('pth exists!', basepath)
 
 def _override_sigma(agent, args):
-    if args['sigma'] is not None:
+    if 'sigma' in args and args['sigma'] is not None:
         net = agent.model.sac_network   # a2c_network -> sac_network
         if hasattr(net, 'sigma') and hasattr(net, 'fixed_sigma'):
             if net.fixed_sigma:
@@ -59,9 +62,23 @@ class Runner:
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
         torch.backends.cudnn.benchmark = True
+        ### it didnot help for lots for openai gym envs anyway :(
+        #torch.backends.cudnn.deterministic = True
+        #torch.use_deterministic_algorithms(True)
+    def reset(self):
+        pass
 
     def load_config(self, params):
         self.seed = params.get('seed', None)
+        if self.seed is None:
+            self.seed = int(time.time())
+        
+        if params["config"].get('multi_gpu', False):
+            import horovod.torch as hvd
+
+            hvd.init()
+            self.seed += hvd.rank()
+        print(f"self.seed = {self.seed}")
 
         self.algo_params = params['algo']
         self.algo_name = self.algo_params['name']
@@ -71,6 +88,15 @@ class Runner:
             torch.manual_seed(self.seed)
             torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)
+            random.seed(self.seed)
+            
+            # deal with environment specific seed if applicable
+            if 'env_config' in params['config']:
+                if not 'seed' in params['config']['env_config']:
+                    params['config']['env_config']['seed'] = self.seed
+                else:
+                    if params["config"].get('multi_gpu', False):
+                        params['config']['env_config']['seed'] += hvd.rank()
 
         config = params['config']
         config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**config['reward_shaper'])
@@ -87,7 +113,7 @@ class Runner:
         print('\033[1;33mStarted to train\033[0m')
         agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
         _restore(agent, args)
-        if self.algo_name == 'cql':
+        if self.algo_name == 'cql' or self.algo_name == 'sac':
             _override_sigma(agent, args)
             _load_hdf5(agent, args)
         agent.train()
@@ -116,3 +142,36 @@ class Runner:
             self.run_play(args)
         else:
             self.run_train(args)
+
+    def train_regression(self, args):
+        class myhdf5dataset(Dataset):
+            def __init__(self, obs, reward, next_obs, dones, action=None, device=args['device']):
+                self.action = action
+                self.obs = obs
+                self.reward = reward
+                self.next_obs = next_obs
+                self.dones = dones
+
+            def __getitem__(self, idx):
+                if self.action is None:
+                    return self.obs[idx], self.reward[idx], self.next_obs[idx], self.dones[idx]
+                else:
+                    return self.obs[idx], self.reward[idx], self.next_obs[idx], self.dones[idx], self.action[idx]
+
+            def __len__(self):
+                return len(self.obs)
+
+        print('\033[1;33mTrain regression\033[0m')
+        agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
+        if hasattr(agent.regression, '__call__'):
+            _restore(agent, args)
+            _obs, _actions, _rewards, _next_obs, _dones = _load_hdf5(agent, args)
+            train_dataset = myhdf5dataset(_obs, _rewards, _next_obs, _dones, _actions)
+            if self.algo_name == 'cql' or self.algo_name == 'sac':
+                _override_sigma(agent, args)
+                print("dataset learning start")
+            agent.regression(train_dataset, batch_size=256)
+        else:
+            raise Exception('no this function')
+
+        

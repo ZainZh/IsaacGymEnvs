@@ -23,6 +23,8 @@ from torch import nn
 
 from time import sleep
 
+from rl_games.common import common_losses
+
 
 def swap_and_flatten01(arr):
     """
@@ -60,6 +62,8 @@ class A2CBase(BaseAlgorithm):
             self.experiment_name = config['name'] + pbt_str + datetime.now().strftime("_%d-%H-%M-%S")
 
         self.config = config
+        self.add_cql = config.get('add_cql', False)
+        self.cql_version = self.config.get('cql_version', 0)
         self.algo_observer = config['features']['observer']
         self.algo_observer.before_init(base_name, config, self.experiment_name)
         self.load_networks(params)
@@ -93,7 +97,7 @@ class A2CBase(BaseAlgorithm):
             self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
             self.env_info = self.vec_env.get_env_info()
 
-        self.ppo_device = config.get('device', self.vec_env.env.device_id)
+        self.ppo_device = config.get('device', self.vec_env.env.device_id)  # or cuda:0?
         print('Env info:')
         print(self.env_info)
         self.value_size = self.env_info.get('value_size', 1)
@@ -102,8 +106,6 @@ class A2CBase(BaseAlgorithm):
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
-        self.ewma_ppo = config.get('ewma_ppo', False)
-        self.ewma_model = None
         self.central_value_config = self.config.get('central_value_config', None)
         self.has_central_value = self.central_value_config is not None
         self.truncate_grads = self.config.get('truncate_grads', False)
@@ -127,12 +129,11 @@ class A2CBase(BaseAlgorithm):
         self.rnn_states = None
         self.name = base_name
 
-        self.ppo = config['ppo']
+        self.ppo = config.get('ppo', True)
         self.max_epochs = self.config.get('max_epochs', 1e6)
 
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.linear_lr = config['lr_schedule'] == 'linear'
-        self.schedule_type = config.get('schedule_type', 'legacy')
 
         if self.is_adaptive_lr:
             self.kl_threshold = config['kl_threshold']
@@ -173,14 +174,16 @@ class A2CBase(BaseAlgorithm):
         self.tau = self.config['tau']
 
         self.games_to_track = self.config.get('games_to_track', 100)
-        print(self.ppo_device)
+        print('current training device:', self.ppo_device)
         self.game_rewards = torch_ext.AverageMeter(self.value_size, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len  # it is used only for current rnn implementation
         self.batch_size = self.horizon_length * self.num_actors * self.num_agents
         self.batch_size_envs = self.horizon_length * self.num_actors
-        self.minibatch_size = self.config['minibatch_size']
+        assert (('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
+        self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
+        self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
         self.mini_epochs_num = self.config['mini_epochs']
         self.num_minibatches = self.batch_size // self.minibatch_size
         assert (self.batch_size % self.minibatch_size == 0)
@@ -218,11 +221,17 @@ class A2CBase(BaseAlgorithm):
                 self.writer = IntervalSummaryWriter(writer, self.config)
             else:
                 self.writer = writer
-
         else:
             self.writer = None
 
         self.value_bootstrap = self.config.get('value_bootstrap')
+
+        self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
+
+        if self.use_smooth_clamp:
+            self.actor_loss_func = common_losses.smoothed_actor_loss
+        else:
+            self.actor_loss_func = common_losses.actor_loss
 
         if self.normalize_advantage and self.normalize_rms_advantage:
             momentum = self.config.get('adv_rms_momentum', 0.5)  # '0.25'
@@ -245,6 +254,22 @@ class A2CBase(BaseAlgorithm):
         self.has_soft_aug = self.soft_aug is not None
         # soft augmentation not yet supported
         assert not self.has_soft_aug
+
+    def trancate_gradients_and_step(self):
+        if self.multi_gpu:
+            self.optimizer.synchronize()
+
+        if self.truncate_grads:
+            self.scaler.unscale_(self.optimizer)
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+
+        if self.multi_gpu:
+            with self.optimizer.skip_synchronize():
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+        else:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -491,8 +516,6 @@ class A2CBase(BaseAlgorithm):
 
     def train_epoch(self):
         self.vec_env.set_train_info(self.frame, self)
-        if self.ewma_ppo:
-            self.ewma_model.reset()
 
     def train_actor_critic(self, obs_dict, opt_step=True):
         pass
@@ -543,10 +566,18 @@ class A2CBase(BaseAlgorithm):
         state['model'] = self.model.state_dict()
         return state
 
-    def get_stats_weights(self):
+    def get_stats_weights(self, model_stats=False):
         state = {}
         if self.mixed_precision:
             state['scaler'] = self.scaler.state_dict()
+        if self.has_central_value:
+            state['central_val_stats'] = self.central_value_net.get_stats_weights(model_stats)
+        if model_stats:
+            if self.normalize_input:
+                state['running_mean_std'] = self.model.running_mean_std.state_dict()
+            if self.normalize_value:
+                state['reward_mean_std'] = self.model.value_mean_std.state_dict()
+
         return state
 
     def set_stats_weights(self, weights):
@@ -554,10 +585,8 @@ class A2CBase(BaseAlgorithm):
             self.advantage_mean_std.load_state_dic(weights['advantage_mean_std'])
         if self.normalize_input and 'running_mean_std' in weights:
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
-        if self.normalize_value and 'reward_mean_std' in weights:
+        if self.normalize_value and 'normalize_value' in weights:
             self.model.value_mean_std.load_state_dict(weights['reward_mean_std'])
-        if self.has_central_value:
-            self.central_value_net.set_stats_weights(weights['assymetric_vf_mean_std'])
         if self.mixed_precision and 'scaler' in weights:
             self.scaler.load_state_dict(weights['scaler'])
 
@@ -615,8 +644,6 @@ class A2CBase(BaseAlgorithm):
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = self.dones.view(self.num_actors, self.num_agents).all(dim=1).nonzero(as_tuple=False)
-            # if len(env_done_indices) > 0:
-                # print('len(env_done_indices): {}'.format(len(env_done_indices)))
 
             self.game_rewards.update(self.current_rewards[env_done_indices])
             self.game_lengths.update(self.current_lengths[env_done_indices])
@@ -773,7 +800,6 @@ class DiscreteA2CBase(A2CBase):
         c_losses = []
         entropies = []
         kls = []
-
         if self.has_central_value:
             self.train_central_value()
 
@@ -797,8 +823,6 @@ class DiscreteA2CBase(A2CBase):
             self.diagnostics.mini_epoch(self, mini_ep)
             if self.normalize_input:
                 self.model.running_mean_std.eval()  # don't need to update statstics more than one miniepoch
-        if self.has_phasic_policy_gradients:
-            self.ppg_aux_loss.train_net(self)
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
@@ -883,14 +907,14 @@ class DiscreteA2CBase(A2CBase):
             epoch_num = self.update_epoch()
             step_time, play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
 
-            # cleaning memory to optimize space
-            self.dataset.update_values_dict(None)
             if self.multi_gpu:
                 self.hvd.sync_stats(self)
+
+            # cleaning memory to optimize space
+            self.dataset.update_values_dict(None)
             total_time += sum_time
             curr_frames = self.curr_frames
             self.frame += curr_frames
-            total_time += sum_time
             should_exit = False
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
@@ -904,7 +928,7 @@ class DiscreteA2CBase(A2CBase):
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
                     print(
-                        f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f}  fps total: {fps_total:.1f}')
+                        f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f} fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses,
                                  entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
@@ -1008,7 +1032,6 @@ class ContinuousA2CBase(A2CBase):
         self.curr_frames = batch_dict.pop('played_frames')
         self.prepare_dataset(batch_dict)
         self.algo_observer.after_steps()
-
         if self.has_central_value:
             self.train_central_value()
 
@@ -1032,34 +1055,18 @@ class ContinuousA2CBase(A2CBase):
 
                 self.dataset.update_mu_sigma(cmu, csigma)
 
-                if self.schedule_type == 'legacy':
-                    if self.multi_gpu:
-                        kl = self.hvd.average_value(kl, 'ep_kls')
-                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef,
-                                                                            self.epoch_num, 0, kl.item())
-                    self.update_lr(self.last_lr)
-
             av_kls = torch_ext.mean_list(ep_kls)
 
-            if self.schedule_type == 'standard':
-                if self.multi_gpu:
-                    av_kls = self.hvd.average_value(av_kls, 'ep_kls')
-                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num,
-                                                                        0, av_kls.item())
-                self.update_lr(self.last_lr)
-            kls.append(av_kls)
-            self.diagnostics.mini_epoch(self, mini_ep)
-            if self.normalize_input:
-                self.model.running_mean_std.eval()  # don't need to update statstics more than one miniepoch
-        if self.schedule_type == 'standard_epoch':
             if self.multi_gpu:
-                av_kls = self.hvd.average_value(torch_ext.mean_list(kls), 'ep_kls')
+                av_kls = self.hvd.average_value(av_kls, 'ep_kls')
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,
                                                                     av_kls.item())
             self.update_lr(self.last_lr)
 
-        if self.has_phasic_policy_gradients:
-            self.ppg_aux_loss.train_net(self)
+            kls.append(av_kls)
+            self.diagnostics.mini_epoch(self, mini_ep)
+            if self.normalize_input:
+                self.model.running_mean_std.eval()  # don't need to update statstics more than one miniepoch
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
@@ -1148,11 +1155,12 @@ class ContinuousA2CBase(A2CBase):
             total_time += sum_time
             frame = self.frame // self.num_agents
 
-            # cleaning memory to optimize space
-            self.dataset.update_values_dict(None)
             if self.multi_gpu:
                 self.hvd.sync_stats(self)
+            # cleaning memory to optimize space
+            self.dataset.update_values_dict(None)
             should_exit = False
+
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
                 # do we need scaled_time?
@@ -1165,7 +1173,7 @@ class ContinuousA2CBase(A2CBase):
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
                     print(
-                        f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f}  fps total: {fps_total:.1f}')
+                        f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f} fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses,
                                  entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
@@ -1180,9 +1188,12 @@ class ContinuousA2CBase(A2CBase):
                     mean_lengths = self.game_lengths.get_mean()
                     self.mean_rewards = mean_rewards[0]
 
+                    # print('current length: {}'.format(self.current_lengths))
+                    # print('current rewards: {}'.format(self.current_rewards / self.current_lengths))
+                    print('mean_rewards: {}, mean_length: {}'.format(self.mean_rewards, mean_lengths))
+
                     for i in range(self.value_size):
                         rewards_name = 'rewards' if i == 0 else 'rewards{0}'.format(i)
-                        print('mean_rewards: {}'.format(mean_rewards[i]))
                         self.writer.add_scalar(rewards_name + '/step'.format(i), mean_rewards[i], frame)
                         self.writer.add_scalar(rewards_name + '/iter'.format(i), mean_rewards[i], epoch_num)
                         self.writer.add_scalar(rewards_name + '/time'.format(i), mean_rewards[i], total_time)
