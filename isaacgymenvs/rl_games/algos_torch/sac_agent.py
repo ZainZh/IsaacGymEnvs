@@ -655,15 +655,15 @@ class SACMultiAgent(BaseAlgorithm):
              ])
 
         self.critic_optimizer = torch.optim.Adam(
-            [{'params': self.model_left.sac_network.actor.parameters(), 'lr': self.config['actor_lr'],
+            [{'params': self.model_left.sac_network.critic.parameters(), 'lr': self.config['actor_lr'],
               'betas': self.config.get("actor_betas", [0.9, 0.999])},
-             {'params': self.model_right.sac_network.actor.parameters(), 'lr': self.config['actor_lr'],
+             {'params': self.model_right.sac_network.critic.parameters(), 'lr': self.config['actor_lr'],
               'betas': self.config.get("actor_betas", [0.9, 0.999])}
              ])
 
-        self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha],
-                                                    lr=self.config["alpha_lr"],
-                                                    betas=self.config.get("alphas_betas", [0.9, 0.999]))
+        self.log_alpha_optimizer = torch.optim.Adam(
+            [{'params': self.log_alpha, 'lr': self.config["alpha_lr"],'betas': self.config.get("alphas_betas", [0.9, 0.999])}
+         ])
 
         self.replay_buffer_left = experience.VectorizedReplayBuffer(self.env_info['observation_space'].shape,
                                                                     self.env_info['action_space'].shape,
@@ -715,7 +715,7 @@ class SACMultiAgent(BaseAlgorithm):
         self.c_loss = nn.MSELoss()
         # self.c2_loss = nn.SmoothL1Loss()
 
-        self.save_best_after = config.get('save_best_after', 500)
+        self.save_best_after = config.get('save_best_after', 100)
         print('save_best_after: {}'.format(self.save_best_after))
         self.print_stats = config.get('print_stats', True)
         self.rnn_states = None
@@ -1360,7 +1360,8 @@ class SACMultiAgent(BaseAlgorithm):
                 self.writer.add_scalar('episode_lengths_right/time', mean_lengths_right, total_time)
 
             if mean_rewards_left + mean_rewards_right > self.last_mean_rewards and self.epoch_num >= self.save_best_after:
-                print('saving next best rewards: ', mean_rewards_left + mean_rewards_right)
+                print('saving next best left rewards: ', mean_rewards_left)
+                print('saving next best right rewards: ', mean_rewards_right)
                 self.last_mean_rewards = mean_rewards_left + mean_rewards_right
                 self.save(
                     os.path.join(self.checkpoint_dir,

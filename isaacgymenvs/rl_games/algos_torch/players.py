@@ -338,7 +338,7 @@ class SACPlayer(BasePlayer):
     def reset(self):
         pass
 
-class SACMultiPlayer(BasePlayer):
+class SACMultiPlayer(BaseMultiPlayer):
     def __init__(self, params):
         BasePlayer.__init__(self, params)
         self.network = self.config['network']
@@ -365,7 +365,7 @@ class SACMultiPlayer(BasePlayer):
         self.model_right.to(self.device)
         self.model_left.eval()
         self.model_right.eval()
-        self.is_rnn = self.model_left.is_rnn()
+        self.is_rnn_left = self.model_left.is_rnn()
         self.is_rnn = self.model_right.is_rnn()
 
     def restore(self, fn):
@@ -374,15 +374,27 @@ class SACMultiPlayer(BasePlayer):
         self.model_left.sac_network.actor.load_state_dict(checkpoint['model_left']['actor'])
         self.model_right.sac_network.actor.load_state_dict(checkpoint['model_right']['actor'])
         self.model_left.sac_network.critic.load_state_dict(checkpoint['model_left']['critic'])
-        self.model.sac_network.critic.load_state_dict(checkpoint['model_right']['critic'])
-        self.model.sac_network.critic_target.load_state_dict(checkpoint['critic_target'])
+        self.model_right.sac_network.critic.load_state_dict(checkpoint['model_right']['critic'])
+        self.model_left.sac_network.critic_target.load_state_dict(checkpoint['model_left']['critic_target'])
+        self.model_right.sac_network.critic_target.load_state_dict(checkpoint['model_right']['critic_target'])
         if self.normalize_input and 'running_mean_std' in checkpoint:
-            self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+            self.model_left.running_mean_std.load_state_dict(checkpoint['model_left']['running_mean_std'])
+            self.model_right.running_mean_std.load_state_dict(checkpoint['model_right']['running_mean_std'])
 
-    def get_action(self, obs, is_determenistic=False):
+    def get_action_left(self, obs, is_determenistic=False):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
-        dist = self.model.actor(obs)
+        dist = self.model_left.actor(obs)
+        actions = dist.sample() if is_determenistic else dist.mean
+        actions = actions.clamp(*self.action_range).to(self.device)
+        if self.has_batch_dimension == False:
+            actions = torch.squeeze(actions.detach())
+        return actions
+
+    def get_action_right(self, obs, is_determenistic=False):
+        if self.has_batch_dimension == False:
+            obs = unsqueeze_obs(obs)
+        dist = self.model_right.actor(obs)
         actions = dist.sample() if is_determenistic else dist.mean
         actions = actions.clamp(*self.action_range).to(self.device)
         if self.has_batch_dimension == False:
