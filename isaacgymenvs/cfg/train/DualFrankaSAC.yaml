@@ -22,7 +22,7 @@ params:
         fixed_sigma: False   # if fixed_sigma=True, config.sigma is used below
 
     mlp:
-      units: [256, 256, 256]
+      units: [256, 128, 64]
       activation: relu   # network_builder activations_factory line 38
 #      units: [256, 128, 64]
 #      activation: elu   # network_builder activations_factory line 38
@@ -72,9 +72,9 @@ params:
     num_steps_per_episode: 1000
     normalize_input: True
     max_env_steps: 1000   # compare with current_lengths
-    actor_lr: 3e-4    # policy lr, can set actor(/critic/alpha)_betas ,default=[0.9,0.999]
-    critic_lr: 3e-4   # qf lr
-    alpha_lr: 3e-4    # sac entropy tuning alpha
+    actor_lr: 5e-4    # policy lr, can set actor(/critic/alpha)_betas ,default=[0.9,0.999]
+    critic_lr: 5e-4   # qf lr
+    alpha_lr: 564e-3    # sac entropy tuning alpha
     target_entropy_coef: 0.1  # if none, default 0.5
 
     score_to_win: 400000
