@@ -85,7 +85,7 @@ class SACAgent(BaseAlgorithm):
         self.replay_buffer_size, 
         self.sac_device)
         self.target_entropy_coef = config.get("target_entropy_coef", 0.5)
-        self.target_entropy = self.target_entropy_coef * -self.env_info['action_space'].shape[0]
+        self.target_entropy = self.target_entropy_coef * -self.env_info['action_space'].shape[0] #0.5*-18= -9
         print("Target entropy", self.target_entropy)
 
         self.step = 0
